@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - loader - ttf</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<link type="text/css" rel="stylesheet" href="main.css">
+	</head>
+	<body>
+		<div style="position:absolute;z-index:999" id="checklist"></div>
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> - TTFLoader using opentype by gero3
+			<br/>type to enter new text, drag to spin the text
+		</div>
+
+		<script src="scoreoutputer.min.js"></script>
+		<script src="./opentype.min.js"></script>
+		<script src="./three.min.js"></script>
+		<script src="./TTFLoader.js"></script>
+		
+		<script>
+		
+		    // -----自我評分表部分-----
+			var so = new ScoreOutputer("109598050的評分表");
+			so.installCSS(function(){
+				// 安裝 bootstrap 的 css，如果在 html 上方引用 bootstrap 5.1.1 的話就不用使用 installCSS ，注意一定要 bootstrap css 5.1.1 版
+				// installCSS 接收一個 callback 當作參數，作為成功安裝 bootstrap css 的回呼函式
+	
+				//加入項目，分數，完成狀況
+				//第一個參數為 項目名稱
+				//第2個參數為 項目分數
+				//第3個參數為 完成狀況，有完成 true/未完成 false
+				//有幾個項目就呼叫幾個 addChild
+				//addChild 要比 renderModal 先呼叫
+				so.addChild("創建場景", 2, true);
+        		so.addChild("讀取字形檔", 2, true);
+        		so.addChild("將地支以圓圈排列", 2, true);
+        		so.addChild("滑鼠點擊 12 地支分別跳轉網頁", 1, true);
+        		so.addChild("顯示 \"高等計算機圖形作業\"", 1, true);
+        		so.addChild("時鐘效果", 1, false);
+        		so.addChild("任何 ply 格式模型", 1, false);
+
+				//產生自評表，參數如下所示
+				so.renderModal(
+					//1. 自評表插入位置 (預設 document.body)
+					document.body,
+					//2. 自評表背景 (預設紅色)
+					'rgba(100,45,58,1)', 
+					//3. 自評表文字顏色 (預設白色)
+					'white', 
+					//4. 自評表文字大小 (預設 14pt)
+					'15pt', 
+					//5. 自評表 checkbox 文字大小 (預設多少忘了)
+					'15px', 
+					//6. 自評表標題 (預設 "自我評分表")
+					dialogTitle='自我評分表 (助教測試用)'
+				);
+		
+				//設定下載按鈕 <-- 一定要呼叫這個函數，不然沒有下載功能
+				so.installDownloadBtn();
+		
+				//產生 "開啟自評表按鈕"
+				so.renderBtn(
+					//自評表按鈕插入位置
+					document.getElementById('checklist'),
+					//自評表按鈕文字
+					"開啟自評表"
+				);
+			});
+			// ----------------------- 立體字部分 -----------------------
+			//var fontttf = src = "./edukai-4.0.ttf";
+			
+			let container;
+			let camera, cameraTarget, scene, renderer;
+			let group, textMesh1, textMesh2, textGeo, material;
+			let firstLetter = true;
+
+			let text = '子';
+			let texts = ['子','丑','寅','卯','辰','巳','午','未','申','酉','戌','亥', '高等計算機圖學作業'];
+			const height = 20,
+				size = 20,
+				hover = 30,
+				curveSegments = 4,
+				bevelThickness = 2,
+				bevelSize = 1.5;
+
+			const raycaster = new THREE.Raycaster();  //滑鼠點擊
+            const mouse = new THREE.Vector2();
+			var textGeos = [];
+			//var projector = { x: 0, y: 0 };
+			//const textGroup;
+
+			let font = null;
+			const mirror = false;
+
+			let targetRotation = 0;
+			let targetRotationOnPointerDown = 0;
+
+			let pointerX = 0;
+			let pointerXOnPointerDown = 0;
+
+			let windowHalfX = window.innerWidth / 2;
+
+			init();
+			animate();
+			//render();
+
+			function init() {
+
+				container = document.createElement( 'div' );
+				document.body.appendChild( container );
+
+				// CAMERA
+
+				camera = new THREE.PerspectiveCamera( 30, window.innerWidth / window.innerHeight, 1, 1500 );
+				camera.position.set( 0, 700, 650 );
+
+				cameraTarget = new THREE.Vector3( 0, 150, 0 );
+
+				// SCENE
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0x000000 );
+				scene.fog = new THREE.Fog( 0x000000, 250, 1400 );
+
+				// LIGHTS
+
+				const dirLight = new THREE.DirectionalLight( 0xffffff, 0.125 );
+				dirLight.position.set( 0, 0, 1 ).normalize();
+				scene.add( dirLight );
+
+				const pointLight = new THREE.PointLight( 0xffffff, 1.5 );
+				pointLight.position.set( 0, 100, 90 );
+				pointLight.color.setHSL( Math.random(), 1, 0.5 );
+				scene.add( pointLight );
+
+				material = new THREE.MeshPhongMaterial( { color: 0xffffff, flatShading: true } );
+				//material = new THREE.MeshLambertMaterial( { color: 0xffffff, flatShading: true } );
+
+				group = new THREE.Group();
+				group.position.y = 100;
+
+				scene.add( group );
+
+				const loader = new THREE.TTFLoader();
+				
+				loader.load( './edukai-4.0.ttf', function ( json ) {
+				console.log(json)
+					font = new THREE.Font( json );
+					createText();
+
+				} );
+
+				const plane = new THREE.Mesh(
+					new THREE.PlaneGeometry( 10000, 10000 ),
+					new THREE.MeshBasicMaterial( { color: 0xffffff, opacity: 0.5, transparent: true } )
+				);
+				plane.position.y = 100;
+				plane.rotation.x = - Math.PI / 2;
+				scene.add( plane );
+
+				// RENDERER
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				container.appendChild( renderer.domElement );
+
+				// EVENTS
+
+				container.style.touchAction = 'none';
+
+				// initialize object to perform world/screen calculations
+	            //projector = new THREE.Projector();
+				//Mouse Key Down
+				container.addEventListener( 'pointerdown', onPointerDown );
+
+				document.addEventListener( 'keypress', onDocumentKeyPress );
+				document.addEventListener( 'keydown', onDocumentKeyDown );
+
+				window.addEventListener( 'resize', onWindowResize );
+
+				//scene.add( textGeos );
+				//console.log( textGeos );
+				//window.addEventListener( 'mousemove', onMouseMove, false ); //啟用滑鼠偵測
+			    //window.requestAnimationFrame(render);
+
+
+			}
+
+			function onWindowResize() {
+
+				windowHalfX = window.innerWidth / 2;
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			function onDocumentKeyDown( event ) {
+
+				if ( firstLetter ) {
+                    for(i = 0; i < 13; i++)
+					{
+						firstLetter = false;
+					    //text = '';
+					    texts[i] = '';
+					}
+					//firstLetter = false;
+					//text = '';
+					//texts[1] = '';
+
+				}
+
+				const keyCode = event.keyCode;
+
+				// backspace
+
+				if ( keyCode === 8 ) {
+
+					event.preventDefault();
+
+					//text = text.substring( 0, text.length - 1 );
+					//refreshText();
+                    for(i = 0; i < 13; i++)
+					{
+						texts[i] = texts[i].substring( 0, texts[i].length - 1 );
+					    refreshText();
+					    //return false;
+					}
+					//texts[1] = texts[1].substring( 0, texts[1].length - 1 );
+					//refreshText();
+					return false;
+
+				}
+
+			}
+
+			function onDocumentKeyPress( event ) {
+
+				const keyCode = event.which;
+
+				// backspace
+
+				if ( keyCode === 8 ) {
+
+					event.preventDefault();
+
+				} else {
+
+					const ch = String.fromCharCode( keyCode );
+					//text += ch;
+					for(i = 0; i < 13; i++)
+					{
+						texts[i] += ch;
+					    refreshText();
+					}
+					//texts[1] += ch;
+					//refreshText();
+
+				}
+
+			}
+
+			function createText() {
+                //let textGeos = [];
+				for(i = 0; i < 13; i++)
+				{
+					textGeo = new THREE.TextGeometry( texts[i], {
+
+                    font: font,
+
+                    size: size,
+                    height: height,
+                    curveSegments: curveSegments,
+
+                    bevelThickness: bevelThickness,
+                    bevelSize: bevelSize,
+                    bevelEnabled: true
+
+                    } );
+
+					textGeo.computeBoundingBox();
+				    textGeo.computeVertexNormals();
+
+					const centerOffset = - 0.5 * ( textGeo.boundingBox.max.x - textGeo.boundingBox.min.x );
+
+					textMesh1 = new THREE.Mesh( textGeo, material );
+
+					switch(i)
+					{
+						case 0:
+                            positionX = 0;
+							positionY = 100;
+							positionZ = 0;
+                            positionText(textMesh1, positionX, positionY, positionZ, centerOffset, textGeo);
+							break;
+						case 1:
+						    positionX = 50;
+							positionY = 86.6;
+							positionZ = 0;
+                            positionText(textMesh1, positionX, positionY, positionZ, centerOffset, textGeo);
+							break;
+					    case 2:
+						    positionX = 86.6;
+							positionY = 50;
+							positionZ = 0;
+                            positionText(textMesh1, positionX, positionY, positionZ, centerOffset, textGeo);
+							break;
+						case 3:
+						    positionX = 100;
+							positionY = 0;
+							positionZ = 0;
+                            positionText(textMesh1, positionX, positionY, positionZ, centerOffset, textGeo);
+							break;
+						case 4:
+						    positionX = 86.6;
+							positionY = -50;
+							positionZ = 0;
+                            positionText(textMesh1, positionX, positionY, positionZ, centerOffset, textGeo);
+							break;
+						case 5:
+						    positionX = 50;
+							positionY = -86.6;
+							positionZ = 0;
+                            positionText(textMesh1, positionX, positionY, positionZ, centerOffset, textGeo);
+							break;
+						case 6:
+						    positionX = 0;
+							positionY = -100;
+							positionZ = 0;
+                            positionText(textMesh1, positionX, positionY, positionZ, centerOffset, textGeo);
+							break;
+						case 7:
+						    positionX = -50;
+							positionY = -86.6;
+							positionZ = 0;
+                            positionText(textMesh1, positionX, positionY, positionZ, centerOffset, textGeo);
+							break;
+						case 8:
+						    positionX = -86.6;
+							positionY = -50;
+							positionZ = 0;
+                            positionText(textMesh1, positionX, positionY, positionZ, centerOffset, textGeo);
+							break;
+						case 9:
+						    positionX = -100;
+							positionY = 0;
+							positionZ = 0;
+                            positionText(textMesh1, positionX, positionY, positionZ, centerOffset, textGeo);
+							break;
+						case 10:
+						    positionX = -86.6;
+							positionY = 50;
+							positionZ = 0;
+                            positionText(textMesh1, positionX, positionY, positionZ, centerOffset, textGeo);
+							break;
+						case 11:
+						    positionX = -50;
+							positionY = 86.6;
+							positionZ = 0;
+                            positionText(textMesh1, positionX, positionY, positionZ, centerOffset, textGeo);
+							break;
+						case 12:
+						    positionX = 0;
+							positionY = -120;
+							positionZ = 100;
+                            positionTitle(textMesh1, positionX, positionY, positionZ, centerOffset, textGeo, Math.PI * -0.5, 0);
+							break;
+					}
+					//textGeos.push(textGeo);
+				}
+				/*textGeo = new THREE.TextGeometry( texts, {
+
+					font: font,
+
+					size: size,
+					height: height,
+					curveSegments: curveSegments,
+
+					bevelThickness: bevelThickness,
+					bevelSize: bevelSize,
+					bevelEnabled: true
+
+				} );*/
+
+				//textGeos.computeBoundingBox();
+				//textGeos.computeVertexNormals();
+				//textGeo.computeBoundingBox();
+				//textGeo.computeVertexNormals();
+
+				//const centerOffset = - 0.5 * ( textGeos.boundingBox.max.x - textGeo.boundingBox.min.x );
+				//const centerOffset = - 0.5 * ( textGeo.boundingBox.max.x - textGeo.boundingBox.min.x );
+
+				/*textMesh1 = new THREE.Mesh( textGeo, material );
+
+				textMesh1.position.x = centerOffset;
+				textMesh1.position.y = hover + 100;
+				textMesh1.position.z = 0;
+
+				textMesh1.rotation.x = 0;
+				textMesh1.rotation.y = Math.PI * 2;
+
+				group.add( textMesh1 );
+
+				if ( mirror ) {
+
+					textMesh2 = new THREE.Mesh( textGeo, material );
+
+					textMesh2.position.x = centerOffset;
+					textMesh2.position.y = - hover;
+					textMesh2.position.z = height;
+
+					textMesh2.rotation.x = Math.PI;
+					textMesh2.rotation.y = Math.PI * 2;
+
+					group.add( textMesh2 );
+
+				}*/
+
+			}
+
+			function positionText(textMesh1, positionX, positionY, positionZ, centerOffset, textGeo) {
+				textMesh1.position.x = centerOffset + positionX;
+			    textMesh1.position.y = hover + positionY + 200;
+				textMesh1.position.z = 0;
+
+				textMesh1.rotation.x = 0;
+				textMesh1.rotation.y = Math.PI * 2;
+
+				scene.add( textMesh1 ); //group.add
+				textGeos.push( textMesh1 );
+				//console.log(textGeos);
+
+				if ( mirror ) {
+
+					textMesh2 = new THREE.Mesh( textGeo, material );
+
+					textMesh2.position.x = centerOffset + positionX;
+					textMesh2.position.y = - hover + positionY;
+					textMesh2.position.z = height;
+
+					textMesh2.rotation.x = Math.PI;
+					textMesh2.rotation.y = Math.PI * 2;
+
+					scene.add( textMesh2 );
+
+				}
+			}
+
+			function positionTitle(textMesh1, positionX, positionY, positionZ, centerOffset, textGeo, rotate, rotateY) {
+				textMesh1.position.x = centerOffset + positionX;
+			    textMesh1.position.y = hover + positionY + 200;
+				textMesh1.position.z = positionZ;
+
+				textMesh1.rotation.x = rotate;
+				textMesh1.rotation.y = Math.PI * 2 + rotateY;
+
+				scene.add( textMesh1 ); //group.add
+				textGeos.push( textMesh1 );
+				//console.log(textGeos);
+
+				if ( mirror ) {
+
+					textMesh2 = new THREE.Mesh( textGeo, material );
+
+					textMesh2.position.x = centerOffset + positionX;
+					textMesh2.position.y = - hover + positionY;
+					textMesh2.position.z = height;
+
+					textMesh2.rotation.x = Math.PI;
+					textMesh2.rotation.y = Math.PI * 2;
+
+					scene.add( textMesh2 );
+
+				}
+			}
+
+			function refreshText() {
+
+				scene.remove( textMesh1 );  //group.remove
+				if ( mirror ) scene.remove( textMesh2 );
+
+			    for(i = 0; i < 13; i++)
+				{
+					if ( ! texts[i] ) return;
+				}
+				//if ( ! texts[1] ) return;
+
+				createText();
+
+			}
+
+			function onPointerDown( event ) {
+
+				if ( event.isPrimary === false ) return;
+
+				console.log("Click.");  //新增部分
+				mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+                mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+				console.log(mouse.x + ' ' + mouse.y);
+
+				raycaster.setFromCamera( mouse, camera );
+				const intersects = raycaster.intersectObjects( textGeos );
+				/*var vector = new THREE.Vector3( mouse.x, mouse.y, 1 );
+	            projector.unprojectVector( vector, camera );
+	            var ray = new THREE.Raycaster( camera.position, vector.sub( camera.position ).normalize() )
+
+				var intersects = ray.intersectObjects( textGeos );*/
+				console.log(intersects);
+				console.log(intersects.length);
+
+                if ( intersects.length > 0 ) {
+	                intersects[0].object.material.color.setRGB( 255, 255, 0 );
+					//window.location.href='https://ntut-cg-lab.github.io/cg2021f-hw00-Ancacion/';
+					window.open('https://ntut-cg-lab.github.io/cg2021f-hw00-Ancacion/', 'cg2021f-hw00-Ancacion', config='height=600,width=800');
+                }
+
+				renderer.render( scene, camera );
+				/*var vector = new THREE.Vector3( mouse.x, mouse.y, 1 );
+	            projector.unprojectVector( vector, camera );
+	            var ray = new THREE.Raycaster( camera.position, vector.sub( camera.position ).normalize() );
+
+				var intersects = ray.intersectObjects( textGeos );*/
+                /*if ( intersects.length > 0 )
+	            {
+		            console.log("Hit @ " + toString( intersects[0].point ) );
+		            // change the color of the closest face.
+		            intersects[ 0 ].object.material.color.setRGB( 135, 206, 235 );
+		            intersects[ 0 ].object.geometry.colorsNeedUpdate = true;
+	            }
+
+				renderer.render( scene, camera );*/
+
+				pointerXOnPointerDown = event.clientX - windowHalfX;
+				targetRotationOnPointerDown = targetRotation;
+
+				document.addEventListener( 'pointermove', onPointerMove );
+				document.addEventListener( 'pointerup', onPointerUp );
+
+			}
+
+			function onPointerMove( event ) {
+
+				if ( event.isPrimary === false ) return;
+
+				pointerX = event.clientX - windowHalfX;
+
+				targetRotation = targetRotationOnPointerDown + ( pointerX - pointerXOnPointerDown ) * 0.02;
+
+			}
+
+			function onPointerUp() {
+
+				if ( event.isPrimary === false ) return;
+
+				document.removeEventListener( 'pointermove', onPointerMove );
+				document.removeEventListener( 'pointerup', onPointerUp );
+
+			}
+
+			//
+
+			function animate() {
+
+				requestAnimationFrame( animate );
+
+				/*raycaster.setFromCamera( mouse, camera );
+				console.log(raycaster);*/
+
+				scene.rotation.y += ( targetRotation - scene.rotation.y ) * 0.05;
+
+				camera.lookAt( cameraTarget );
+
+				renderer.render( scene, camera );
+
+			}
+
+			/*function onMouseMove( event ) {
+                // calculate mouse position in normalized device coordinates
+                // (-1 to +1) for both components
+                mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+                mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+				//console.log(mouse.x + ' ' + mouse.y);
+            }*/
+
+			/*function render() {
+                // update the picking ray with the camera and mouse position
+                raycaster.setFromCamera( mouse, camera );
+                // calculate objects intersecting the picking ray
+                const intersects = raycaster.intersectObjects( textGeos );
+				//console.log(intersects.length);
+				console.log(intersects);
+                for ( let i = 0; i < intersects.length; i ++ ) {
+	                intersects[ i ].object.material.color.set( 0xFFFFFF );
+                }
+				//for ( let i = 0; i < intersects.length; i ++ ) {
+	            //scene.children[2].object.material.color.set( 0xff0000 );
+                //}
+				//console.log(scene.children[2]);
+                //console.log(intersects);
+
+                renderer.render( scene, camera );
+            }*/
+
+		</script>
+
+	</body>
+</html>
